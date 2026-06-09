@@ -7,6 +7,7 @@
 
 use crate::catalog::{self, Backend, BACKENDS};
 use crate::exec;
+use crate::i18n::{Lang, t};
 
 // ---------------------------------------------------------------------------
 // Answers collected across the wizard
@@ -19,7 +20,7 @@ pub struct WizardConfig {
     pub workspace_path: String,
     pub workspace_single_agent: bool, // false = fleet (default)
     pub workspace_no_runtime: bool,   // false = runtime (default)
-    pub lang: String,                 // "th" or "en"
+    pub lang: String,                 // "th" or "en" — bwoc CLI language
     pub agent_name: String,
     pub agent_role: String,
     pub primary_model: String,
@@ -58,6 +59,7 @@ pub enum InputKind {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Stage {
+    LangSelect,
     Welcome,
     CheckBwoc,
     PickBackend,
@@ -79,27 +81,28 @@ pub enum Stage {
 }
 
 impl Stage {
-    /// Human-readable Thai name shown in the title bar.
-    pub fn display_name(&self) -> &'static str {
+    /// Human-readable name shown in the title bar (bilingual).
+    pub fn display_name(&self, lang: Lang) -> &'static str {
         match self {
-            Stage::Welcome => "ยินดีต้อนรับ",
-            Stage::CheckBwoc => "ตรวจสอบ bwoc",
-            Stage::PickBackend => "เลือก Backend",
-            Stage::BaseUrl => "ที่อยู่ API (baseUrl)",
-            Stage::WorkspacePath => "ที่อยู่ Workspace",
-            Stage::WorkspaceMode => "โหมด Workspace",
-            Stage::WorkspaceRuntime => "Runtime",
-            Stage::WorkspaceLang => "ภาษา",
-            Stage::RunInit => "สร้าง Workspace",
-            Stage::AgentName => "ชื่อ Agent",
-            Stage::AgentRole => "หน้าที่ Agent",
-            Stage::AgentModel => "เลือก Model",
-            Stage::AgentFallback => "Fallback Model",
-            Stage::RunNew => "สร้าง Agent",
-            Stage::AdvancedPrompt => "Feature เสริม?",
-            Stage::AdvancedInfo => "Feature เสริม",
-            Stage::Verify => "ตรวจสอบ",
-            Stage::Done => "เสร็จสิ้น!",
+            Stage::LangSelect    => "Language / ภาษา",
+            Stage::Welcome       => t(lang, "Welcome",          "ยินดีต้อนรับ"),
+            Stage::CheckBwoc     => t(lang, "Check bwoc",       "ตรวจสอบ bwoc"),
+            Stage::PickBackend   => t(lang, "Pick Backend",     "เลือก Backend"),
+            Stage::BaseUrl       => t(lang, "API Base URL",     "ที่อยู่ API (baseUrl)"),
+            Stage::WorkspacePath => t(lang, "Workspace Path",   "ที่อยู่ Workspace"),
+            Stage::WorkspaceMode => t(lang, "Workspace Mode",   "โหมด Workspace"),
+            Stage::WorkspaceRuntime => t(lang, "Runtime",       "Runtime"),
+            Stage::WorkspaceLang => t(lang, "CLI Language",     "ภาษา CLI"),
+            Stage::RunInit       => t(lang, "Create Workspace", "สร้าง Workspace"),
+            Stage::AgentName     => t(lang, "Agent Name",       "ชื่อ Agent"),
+            Stage::AgentRole     => t(lang, "Agent Role",       "หน้าที่ Agent"),
+            Stage::AgentModel    => t(lang, "Pick Model",       "เลือก Model"),
+            Stage::AgentFallback => t(lang, "Fallback Model",   "Fallback Model"),
+            Stage::RunNew        => t(lang, "Create Agent",     "สร้าง Agent"),
+            Stage::AdvancedPrompt => t(lang, "Extra Features?", "Feature เสริม?"),
+            Stage::AdvancedInfo  => t(lang, "Extra Features",   "Feature เสริม"),
+            Stage::Verify        => t(lang, "Verify",           "ตรวจสอบ"),
+            Stage::Done          => t(lang, "Done!",            "เสร็จสิ้น!"),
         }
     }
 
@@ -117,6 +120,7 @@ impl Stage {
         let has_advanced = cfg.advanced;
 
         let mut seq = vec![
+            Stage::LangSelect,
             Stage::Welcome,
             Stage::CheckBwoc,
             Stage::PickBackend,
@@ -153,23 +157,31 @@ pub struct App {
     pub stage: Stage,
     pub input: InputKind,
     pub cfg: WizardConfig,
-    pub bwoc_version: String, // filled on CheckBwoc
+    pub lang: Lang,             // wizard UI language (En default)
+    pub bwoc_version: String,   // filled on CheckBwoc
     pub quit: bool,
-    /// Custom model text buffer (AgentModel / AgentFallback "พิมพ์เอง").
+    /// Custom model text buffer (AgentModel / AgentFallback "custom").
     pub custom_model_buffer: String,
     pub in_custom_model: bool,
 }
 
 impl App {
-    pub fn new() -> Self {
+    pub fn new(initial_lang: Lang) -> Self {
         let mut app = App {
-            stage: Stage::Welcome,
+            stage: Stage::LangSelect,
             input: InputKind::Info,
+            lang: initial_lang,
             cfg: WizardConfig {
-                lang: "th".to_string(),
+                lang: match initial_lang {
+                    Lang::En => "en".to_string(),
+                    Lang::Th => "th".to_string(),
+                },
                 workspace_path: default_workspace(),
                 agent_name: "alpha".to_string(),
-                agent_role: "ผู้ช่วยทั่วไป".to_string(),
+                agent_role: match initial_lang {
+                    Lang::En => "General assistant".to_string(),
+                    Lang::Th => "ผู้ช่วยทั่วไป".to_string(),
+                },
                 primary_model: String::new(),
                 fallback_model: String::new(),
                 ..Default::default()
@@ -181,6 +193,50 @@ impl App {
         };
         app.enter_stage();
         app
+    }
+
+    /// Toggle the wizard UI language live (F2 key).
+    ///
+    /// Re-localizes the current stage's widgets WITHOUT re-running side effects
+    /// or discarding in-progress input:
+    ///   - Action stages (CheckBwoc/RunInit/RunNew/Verify) already shelled out
+    ///     to `bwoc`; calling `enter_stage()` would re-execute the command
+    ///     (e.g. `bwoc new` → "already exists"). We leave their captured output
+    ///     as-is — it embeds bwoc's own (untranslated) output anyway. The title
+    ///     bar and key hints still switch language (rendered from `app.lang`).
+    ///   - Select/Info stages are rebuilt so option labels switch language, but
+    ///     the cursor / text buffer the user was on is restored afterwards.
+    pub fn toggle_lang(&mut self) {
+        self.lang = self.lang.toggle();
+        match &self.stage {
+            Stage::CheckBwoc | Stage::RunInit | Stage::RunNew | Stage::Verify => {
+                // Already executed — do not re-run. Live-rendered widgets
+                // (BwocMissing menu, hints, titles) pick up the new language at
+                // draw time from `app.lang`.
+            }
+            _ => {
+                let saved = self.input.clone();
+                self.enter_stage();
+                // Restore interactive state the rebuild would have reset.
+                match (&mut self.input, &saved) {
+                    (
+                        InputKind::Select { cursor, items },
+                        InputKind::Select { cursor: old, .. },
+                    ) => {
+                        if *old < items.len() {
+                            *cursor = *old;
+                        }
+                    }
+                    (
+                        InputKind::Text { buffer, .. },
+                        InputKind::Text { buffer: old, .. },
+                    ) => {
+                        *buffer = old.clone();
+                    }
+                    _ => {}
+                }
+            }
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -314,7 +370,23 @@ impl App {
     /// Build the `InputKind` for the newly-entered stage and run any
     /// side-effects (action stages shell out here).
     fn enter_stage(&mut self) {
+        let lang = self.lang;
         match &self.stage {
+            Stage::LangSelect => {
+                // Cursor: 0 = English (default), 1 = Thai
+                let cursor = match self.lang {
+                    Lang::En => 0,
+                    Lang::Th => 1,
+                };
+                self.input = InputKind::Select {
+                    cursor,
+                    items: vec![
+                        "English".to_string(),
+                        "ไทย (Thai)".to_string(),
+                    ],
+                };
+            }
+
             Stage::Welcome => {
                 self.input = InputKind::Info;
             }
@@ -326,8 +398,11 @@ impl App {
                     self.input = InputKind::Action {
                         ok: true,
                         output: format!(
-                            "พบ bwoc แล้ว! เวอร์ชัน: {}\n\nกด Enter เพื่อเริ่มต้น",
-                            res.stdout
+                            "{}\n\n{}",
+                            t(lang,
+                                "bwoc found! Version:",
+                                "พบ bwoc แล้ว! เวอร์ชัน:"),
+                            res.stdout,
                         ),
                     };
                 } else {
@@ -336,16 +411,16 @@ impl App {
             }
 
             Stage::PickBackend => {
+                let l = lang;
                 let items: Vec<String> = BACKENDS
                     .iter()
                     .map(|b| {
                         let present = if b.binary.is_empty() {
-                            // openai-compatible — no single binary
-                            "  (ไม่ต้องการ CLI)".to_string()
+                            t(l, "  (no CLI required)", "  (ไม่ต้องการ CLI)").to_string()
                         } else if exec::binary_present(b.binary) {
-                            "  ✓ ติดตั้งแล้ว".to_string()
+                            t(l, "  ✓ installed", "  ✓ ติดตั้งแล้ว").to_string()
                         } else {
-                            "  ✗ ยังไม่ได้ติดตั้ง".to_string()
+                            t(l, "  ✗ not installed", "  ✗ ยังไม่ได้ติดตั้ง").to_string()
                         };
                         format!("{}{}", b.label, present)
                     })
@@ -378,8 +453,12 @@ impl App {
                 self.input = InputKind::Select {
                     cursor: if self.cfg.workspace_single_agent { 1 } else { 0 },
                     items: vec![
-                        "Fleet (ทีม) — หลาย agent ทำงานร่วมกัน".to_string(),
-                        "Single-agent — agent เดี่ยว".to_string(),
+                        t(lang,
+                            "Fleet (team) — multiple agents collaborate",
+                            "Fleet (ทีม) — หลาย agent ทำงานร่วมกัน").to_string(),
+                        t(lang,
+                            "Single-agent — one agent only",
+                            "Single-agent — agent เดี่ยว").to_string(),
                     ],
                 };
             }
@@ -388,18 +467,31 @@ impl App {
                 self.input = InputKind::Select {
                     cursor: if self.cfg.workspace_no_runtime { 1 } else { 0 },
                     items: vec![
-                        "รันได้จริง (มี runtime) — แนะนำ".to_string(),
-                        "อ่านอย่างเดียว (--no-runtime)".to_string(),
+                        t(lang,
+                            "Enabled (with runtime) — recommended",
+                            "รันได้จริง (มี runtime) — แนะนำ").to_string(),
+                        t(lang,
+                            "Disabled (--no-runtime)",
+                            "อ่านอย่างเดียว (--no-runtime)").to_string(),
                     ],
                 };
             }
 
             Stage::WorkspaceLang => {
+                // Default cursor: match wizard lang so both align by default.
+                let cursor = match self.cfg.lang.as_str() {
+                    "en" => 0,
+                    _    => 1,
+                };
                 self.input = InputKind::Select {
-                    cursor: if self.cfg.lang == "en" { 1 } else { 0 },
+                    cursor,
                     items: vec![
-                        "ไทย (th) — แนะนำ".to_string(),
-                        "อังกฤษ (en)".to_string(),
+                        t(lang,
+                            "English (en) — recommended for search/share",
+                            "English (en)").to_string(),
+                        t(lang,
+                            "Thai (th) — recommended for Thai-language users",
+                            "ไทย (th) — แนะนำ").to_string(),
                     ],
                 };
             }
@@ -420,15 +512,16 @@ impl App {
             }
 
             Stage::AgentRole => {
+                let placeholder = t(lang, "General assistant", "ผู้ช่วยทั่วไป").to_string();
                 self.input = InputKind::Text {
                     buffer: self.cfg.agent_role.clone(),
-                    placeholder: "ผู้ช่วยทั่วไป".to_string(),
+                    placeholder,
                 };
             }
 
             Stage::AgentModel => {
                 let mut items = model_items_for(self.cfg.backend_idx);
-                items.push("พิมพ์เอง (custom)".to_string());
+                items.push(t(lang, "Custom (type manually)", "พิมพ์เอง (custom)").to_string());
                 let cursor = if self.cfg.primary_model.is_empty() {
                     0
                 } else {
@@ -441,9 +534,9 @@ impl App {
             }
 
             Stage::AgentFallback => {
-                let mut items = vec!["ไม่มี (none)".to_string()];
+                let mut items = vec![t(lang, "None", "ไม่มี (none)").to_string()];
                 items.extend(model_items_for(self.cfg.backend_idx));
-                items.push("พิมพ์เอง (custom)".to_string());
+                items.push(t(lang, "Custom (type manually)", "พิมพ์เอง (custom)").to_string());
                 let cursor = 0; // default: none
                 self.input = InputKind::Select { cursor, items };
             }
@@ -460,8 +553,12 @@ impl App {
                 self.input = InputKind::Select {
                     cursor: if self.cfg.advanced { 0 } else { 1 },
                     items: vec![
-                        "ใช่ อยากรู้ feature เสริม".to_string(),
-                        "ไม่ ข้ามไปเลย".to_string(),
+                        t(lang,
+                            "Yes, show me the extra features",
+                            "ใช่ อยากรู้ feature เสริม").to_string(),
+                        t(lang,
+                            "No, skip",
+                            "ไม่ ข้ามไปเลย").to_string(),
                     ],
                 };
             }
@@ -486,7 +583,21 @@ impl App {
 
     /// Persist the current widget value into `cfg`.
     fn commit_input(&mut self) {
+        let lang = self.lang;
         match self.stage.clone() {
+            Stage::LangSelect => {
+                if let InputKind::Select { cursor, .. } = &self.input {
+                    self.lang = if *cursor == 0 { Lang::En } else { Lang::Th };
+                    // Sync bwoc CLI lang default to match the wizard choice,
+                    // but only if the user hasn't explicitly changed it yet
+                    // (at this early stage cfg.lang still holds the init value).
+                    self.cfg.lang = match self.lang {
+                        Lang::En => "en".to_string(),
+                        Lang::Th => "th".to_string(),
+                    };
+                }
+            }
+
             Stage::PickBackend => {
                 if let InputKind::Select { cursor, .. } = &self.input {
                     self.cfg.backend_idx = *cursor;
@@ -527,7 +638,7 @@ impl App {
 
             Stage::WorkspaceLang => {
                 if let InputKind::Select { cursor, .. } = &self.input {
-                    self.cfg.lang = if *cursor == 1 {
+                    self.cfg.lang = if *cursor == 0 {
                         "en".to_string()
                     } else {
                         "th".to_string()
@@ -558,9 +669,10 @@ impl App {
             }
 
             Stage::AgentModel => {
+                let custom_label = t(lang, "Custom (type manually)", "พิมพ์เอง (custom)");
                 if let InputKind::Select { cursor, items } = &self.input {
                     let chosen = &items[*cursor];
-                    if chosen == "พิมพ์เอง (custom)" {
+                    if chosen.as_str() == custom_label {
                         // Switch to custom text input instead of advancing.
                         self.in_custom_model = true;
                         self.custom_model_buffer.clear();
@@ -571,14 +683,16 @@ impl App {
             }
 
             Stage::AgentFallback => {
+                let custom_label = t(lang, "Custom (type manually)", "พิมพ์เอง (custom)");
+                let none_label   = t(lang, "None", "ไม่มี (none)");
                 if let InputKind::Select { cursor, items } = &self.input {
                     let chosen = &items[*cursor];
-                    if chosen == "พิมพ์เอง (custom)" {
+                    if chosen.as_str() == custom_label {
                         self.in_custom_model = true;
                         self.custom_model_buffer.clear();
                         return;
                     }
-                    self.cfg.fallback_model = if chosen == "ไม่มี (none)" {
+                    self.cfg.fallback_model = if chosen.as_str() == none_label {
                         String::new()
                     } else {
                         chosen.clone()
@@ -602,13 +716,18 @@ impl App {
     // -----------------------------------------------------------------------
 
     fn run_init(&self) -> (bool, String) {
+        let lang = self.lang;
         // Ensure directory exists.
         if let Err(e) = std::fs::create_dir_all(&self.cfg.workspace_path) {
             return (
                 false,
                 format!(
-                    "ไม่สามารถสร้างโฟลเดอร์ {} ได้: {}",
-                    self.cfg.workspace_path, e
+                    "{} {}: {}",
+                    t(lang,
+                        "Could not create directory",
+                        "ไม่สามารถสร้างโฟลเดอร์"),
+                    self.cfg.workspace_path,
+                    e,
                 ),
             );
         }
@@ -628,23 +747,31 @@ impl App {
             (
                 true,
                 format!(
-                    "✓ สร้าง workspace สำเร็จ!\n\nที่อยู่: {}\n\n{}",
+                    "{}\n\n{}: {}\n\n{}",
+                    t(lang,
+                        "✓ Workspace created successfully!",
+                        "✓ สร้าง workspace สำเร็จ!"),
+                    t(lang, "Path", "ที่อยู่"),
                     self.cfg.workspace_path,
-                    res.combined()
+                    res.combined(),
                 ),
             )
         } else {
             (
                 false,
                 format!(
-                    "✗ เกิดข้อผิดพลาดขณะสร้าง workspace:\n\n{}",
-                    res.combined()
+                    "{}\n\n{}",
+                    t(lang,
+                        "✗ Error creating workspace:",
+                        "✗ เกิดข้อผิดพลาดขณะสร้าง workspace:"),
+                    res.combined(),
                 ),
             )
         }
     }
 
     fn run_new(&self) -> (bool, String) {
+        let lang = self.lang;
         let backend = self.cfg.backend();
         let mut args: Vec<String> = vec![
             "new".to_string(),
@@ -681,17 +808,25 @@ impl App {
             (
                 true,
                 format!(
-                    "✓ สร้าง agent '{}' สำเร็จ!\n\nBackend: {}\nModel: {}\n\n{}",
+                    "{} '{}' {}\n\nBackend: {}\nModel: {}\n\n{}",
+                    t(lang, "✓ Agent", "✓ สร้าง agent"),
                     self.cfg.agent_name,
+                    t(lang, "created successfully!", "สำเร็จ!"),
                     backend.label,
                     self.cfg.primary_model,
-                    res.combined()
+                    res.combined(),
                 ),
             )
         } else {
             (
                 false,
-                format!("✗ เกิดข้อผิดพลาดขณะสร้าง agent:\n\n{}", res.combined()),
+                format!(
+                    "{}\n\n{}",
+                    t(lang,
+                        "✗ Error creating agent:",
+                        "✗ เกิดข้อผิดพลาดขณะสร้าง agent:"),
+                    res.combined(),
+                ),
             )
         }
     }
@@ -767,78 +902,124 @@ impl App {
     // -----------------------------------------------------------------------
 
     pub fn right_pane_text(&self) -> String {
+        let lang = self.lang;
         match &self.stage {
-            Stage::Welcome => "\
-BWOC (Buddhist Way of Coding) เป็น framework\n\
+            Stage::LangSelect => t(lang,
+                "Choose the language for this setup wizard.\n\n\
+English is the default.\n\
+Use ↑↓ to move, Enter to confirm.\n\n\
+You can toggle the language at any time\n\
+during the wizard by pressing F2.",
+                "เลือกภาษาสำหรับ wizard นี้\n\n\
+ค่าเริ่มต้นคือ English\n\
+ใช้ ↑↓ เลื่อน Enter ยืนยัน\n\n\
+คุณสามารถสลับภาษาได้ตลอดเวลา\n\
+ระหว่าง wizard ด้วยปุ่ม F2").to_string(),
+
+            Stage::Welcome => t(lang,
+                "BWOC (Buddhist Way of Coding) is a framework\n\
+for building and managing AI coding agents.\n\n\
+This wizard will walk you through every step:\n\
+  • Choose an AI backend\n\
+  • Create a workspace (root folder)\n\
+  • Create your first agent\n\
+  • Verify everything is ready\n\n\
+Press Enter to begin",
+                "BWOC (Buddhist Way of Coding) เป็น framework\n\
 สำหรับสร้างและจัดการ AI coding agent\n\n\
 Wizard นี้จะช่วยคุณตั้งค่าทุกอย่างทีละขั้นตอน:\n\
   • เลือก AI backend ที่ต้องการ\n\
   • สร้าง workspace (โฟลเดอร์หลัก)\n\
   • สร้าง agent ตัวแรก\n\
   • ตรวจสอบว่าทุกอย่างพร้อมใช้งาน\n\n\
-กด Enter เพื่อเริ่มต้น"
-                .to_string(),
+กด Enter เพื่อเริ่มต้น").to_string(),
 
-            Stage::CheckBwoc => "\
-กำลังตรวจสอบว่า bwoc CLI\n\
+            Stage::CheckBwoc => t(lang,
+                "Checking whether the bwoc CLI is installed\n\
+and ready to use.\n\n\
+If bwoc is not yet installed, run install.sh\n\
+first and then retry.\n\n\
+See README.md for installation instructions.",
+                "กำลังตรวจสอบว่า bwoc CLI\n\
 ติดตั้งและพร้อมใช้งานหรือยัง\n\n\
 ถ้า bwoc ยังไม่ได้ติดตั้ง\n\
 ให้รัน install.sh ก่อนแล้วลองใหม่\n\n\
-ดู README.md สำหรับวิธีติดตั้ง"
-                .to_string(),
+ดู README.md สำหรับวิธีติดตั้ง").to_string(),
 
             Stage::PickBackend => {
                 let b = self.cfg.backend();
-                b.description.to_string()
+                b.description(lang).to_string()
             }
 
-            Stage::BaseUrl => catalog::HELP_BASE_URL.body.to_string(),
+            Stage::BaseUrl       => catalog::HELP_BASE_URL.body(lang).to_string(),
+            Stage::WorkspacePath => catalog::HELP_WORKSPACE_PATH.body(lang).to_string(),
+            Stage::WorkspaceMode => catalog::HELP_WORKSPACE_MODE.body(lang).to_string(),
+            Stage::WorkspaceRuntime => catalog::HELP_WORKSPACE_RUNTIME.body(lang).to_string(),
+            Stage::WorkspaceLang => catalog::HELP_WORKSPACE_LANG.body(lang).to_string(),
 
-            Stage::WorkspacePath => catalog::HELP_WORKSPACE_PATH.body.to_string(),
-
-            Stage::WorkspaceMode => catalog::HELP_WORKSPACE_MODE.body.to_string(),
-
-            Stage::WorkspaceRuntime => catalog::HELP_WORKSPACE_RUNTIME.body.to_string(),
-
-            Stage::WorkspaceLang => catalog::HELP_WORKSPACE_LANG.body.to_string(),
-
-            Stage::RunInit => "\
-กำลังรัน: bwoc init\n\n\
+            Stage::RunInit => t(lang,
+                "Running: bwoc init\n\n\
+Creates the workspace with your chosen settings.\n\
+This takes only a few seconds.\n\n\
+If an error occurs, press ← to go back,\n\
+adjust your settings, and try again.",
+                "กำลังรัน: bwoc init\n\n\
 สร้าง workspace ตามการตั้งค่าของคุณ\n\
 กระบวนการนี้ใช้เวลาไม่กี่วินาที\n\n\
 ถ้าเกิดข้อผิดพลาด กด ← เพื่อกลับไป\n\
-แก้ไขการตั้งค่าแล้วลองอีกครั้ง"
-                .to_string(),
+แก้ไขการตั้งค่าแล้วลองอีกครั้ง").to_string(),
 
-            Stage::AgentName => catalog::HELP_AGENT_NAME.body.to_string(),
+            Stage::AgentName     => catalog::HELP_AGENT_NAME.body(lang).to_string(),
+            Stage::AgentRole     => catalog::HELP_AGENT_ROLE.body(lang).to_string(),
+            Stage::AgentModel    => catalog::HELP_AGENT_MODEL.body(lang).to_string(),
+            Stage::AgentFallback => catalog::HELP_AGENT_FALLBACK.body(lang).to_string(),
 
-            Stage::AgentRole => catalog::HELP_AGENT_ROLE.body.to_string(),
-
-            Stage::AgentModel => catalog::HELP_AGENT_MODEL.body.to_string(),
-
-            Stage::AgentFallback => catalog::HELP_AGENT_FALLBACK.body.to_string(),
-
-            Stage::RunNew => "\
-กำลังรัน: bwoc new\n\n\
+            Stage::RunNew => t(lang,
+                "Running: bwoc new\n\n\
+Creates the agent with your chosen settings,\n\
+including persona, mindset, and config.\n\n\
+If an error occurs, press ← to go back,\n\
+adjust your settings, and try again.",
+                "กำลังรัน: bwoc new\n\n\
 สร้าง agent ตามการตั้งค่าของคุณ\n\
 รวมถึง persona, mindset, และ config\n\n\
 ถ้าเกิดข้อผิดพลาด กด ← เพื่อกลับไป\n\
-แก้ไขแล้วลองอีกครั้ง"
-                .to_string(),
+แก้ไขแล้วลองอีกครั้ง").to_string(),
 
-            Stage::AdvancedPrompt => "\
-BWOC มี feature เสริมที่น่าสนใจ:\n\n\
+            Stage::AdvancedPrompt => t(lang,
+                "BWOC has some powerful optional features:\n\n\
+Teams — create groups of agents that collaborate\n\
+and share a task list.\n\n\
+Skills — add special capabilities to an agent,\n\
+such as web search or PDF reading.\n\n\
+Plugins — connect to external systems\n\
+like Jira, Figma, or Slack.\n\n\
+All of these can be added later.",
+                "BWOC มี feature เสริมที่น่าสนใจ:\n\n\
 Teams — สร้างกลุ่ม agent ที่ทำงาน\n\
 ร่วมกันและแชร์ task list\n\n\
 Skills — เพิ่มความสามารถพิเศษให้ agent\n\
 เช่น ค้นหาเว็บ, อ่าน PDF\n\n\
 Plugins — เชื่อมต่อกับระบบนอก\n\
 เช่น Jira, Figma, Slack\n\n\
-ทุกอย่างสามารถเพิ่มได้ทีหลัง"
-                .to_string(),
+ทุกอย่างสามารถเพิ่มได้ทีหลัง").to_string(),
 
-            Stage::AdvancedInfo => "\
-สรุป feature เสริมของ BWOC:\n\n\
+            Stage::AdvancedInfo => t(lang,
+                "BWOC extra features summary:\n\n\
+TEAMS\n\
+  bwoc team list\n\
+  bwoc team create <name>\n\
+  Agent groups with a shared task list\n\n\
+SKILLS\n\
+  bwoc skill list\n\
+  bwoc skill add <agent> <skill>\n\
+  Extra capabilities attached to an agent\n\n\
+PLUGINS\n\
+  bwoc plugin list\n\
+  bwoc plugin install <name>\n\
+  Connect Jira / Figma / Slack / etc.\n\n\
+None of this is required right now!",
+                "สรุป feature เสริมของ BWOC:\n\n\
 TEAMS\n\
   bwoc team list\n\
   bwoc team create <ชื่อ>\n\
@@ -851,36 +1032,51 @@ PLUGINS\n\
   bwoc plugin list\n\
   bwoc plugin install <ชื่อ>\n\
   เชื่อมต่อ Jira/Figma/Slack/ฯลฯ\n\n\
-ไม่ต้องทำตอนนี้ก็ได้!"
-                .to_string(),
+ไม่ต้องทำตอนนี้ก็ได้!").to_string(),
 
-            Stage::Verify => "\
-กำลังตรวจสอบทุกอย่าง:\n\n\
+            Stage::Verify => t(lang,
+                "Verifying everything:\n\n\
+• bwoc doctor — overall health check\n\
+• bwoc check  — validate the agent\n\
+• bwoc list   — list registered agents\n\n\
+✓ = passed\n\
+✗ = problem (see details on the left)",
+                "กำลังตรวจสอบทุกอย่าง:\n\n\
 • bwoc doctor — สุขภาพโดยรวม\n\
 • bwoc check — ตรวจสอบ agent\n\
 • bwoc list — แสดง agent ที่มี\n\n\
 ✓ = ผ่าน\n\
-✗ = มีปัญหา (ดู error ด้านซ้าย)"
-                .to_string(),
+✗ = มีปัญหา (ดู error ด้านซ้าย)").to_string(),
 
             Stage::Done => {
-                format!(
-                    "ยินดีด้วย! ตั้งค่าเสร็จสมบูรณ์\n\n\
-Workspace: {}\nAgent: {}\nBackend: {}\nModel: {}\n\n\
-ขั้นตอนต่อไป:\n\
-  cd {}\n\
-  bwoc list\n\
-  bwoc spawn --path agents/agent-{}\n\
-  bwoc chat {}\n\n\
-กด Enter หรือ q เพื่อออก",
-                    self.cfg.workspace_path,
-                    self.cfg.agent_name,
+                let (ws, agent, backend, model) = (
+                    &self.cfg.workspace_path,
+                    &self.cfg.agent_name,
                     self.cfg.backend().label,
-                    self.cfg.primary_model,
-                    self.cfg.workspace_path,
-                    self.cfg.agent_name,
-                    self.cfg.agent_name,
-                )
+                    &self.cfg.primary_model,
+                );
+                match lang {
+                    Lang::En => format!(
+                        "Congratulations! Setup complete.\n\n\
+Workspace: {ws}\nAgent: {agent}\nBackend: {backend}\nModel: {model}\n\n\
+Next steps:\n\
+  cd {ws}\n\
+  bwoc list\n\
+  bwoc spawn --path agents/agent-{agent}\n\
+  bwoc chat {agent}\n\n\
+Press Enter or q to exit"
+                    ),
+                    Lang::Th => format!(
+                        "ยินดีด้วย! ตั้งค่าเสร็จสมบูรณ์\n\n\
+Workspace: {ws}\nAgent: {agent}\nBackend: {backend}\nModel: {model}\n\n\
+ขั้นตอนต่อไป:\n\
+  cd {ws}\n\
+  bwoc list\n\
+  bwoc spawn --path agents/agent-{agent}\n\
+  bwoc chat {agent}\n\n\
+กด Enter หรือ q เพื่อออก"
+                    ),
+                }
             }
         }
     }
@@ -891,6 +1087,7 @@ Workspace: {}\nAgent: {}\nBackend: {}\nModel: {}\n\n\
 
     /// Returns Some(error message) if current agent name buffer is invalid.
     pub fn agent_name_error(&self) -> Option<String> {
+        let lang = self.lang;
         if self.stage != Stage::AgentName {
             return None;
         }
@@ -904,7 +1101,10 @@ Workspace: {}\nAgent: {}\nBackend: {}\nModel: {}\n\n\
                 .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
             {
                 return Some(
-                    "ชื่อต้องเป็น lowercase, ตัวเลข, และ - เท่านั้น".to_string(),
+                    t(lang,
+                        "Name must contain only lowercase letters, digits, and hyphens",
+                        "ชื่อต้องเป็น lowercase, ตัวเลข, และ - เท่านั้น")
+                    .to_string(),
                 );
             }
         }

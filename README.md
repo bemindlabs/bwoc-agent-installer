@@ -6,13 +6,13 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-2024-orange.svg)](https://www.rust-lang.org/)
-[![Version](https://img.shields.io/badge/version-0.1.1-blue.svg)](Cargo.toml)
-[![UI](https://img.shields.io/badge/UI-Thai-blue.svg)](#-the-wizard)
-[![Status](https://img.shields.io/badge/status-0.1.0%20pre--release-yellow.svg)](#-status)
+[![Version](https://img.shields.io/badge/version-0.1.2-blue.svg)](Cargo.toml)
+[![UI](https://img.shields.io/badge/UI-EN%20%7C%20TH-blue.svg)](#-the-wizard)
+[![Status](https://img.shields.io/badge/status-0.1.2%20pre--release-yellow.svg)](#-status)
 
 </div>
 
-Installing [BWOC](https://github.com/bemindlabs/BWOC-Framework) normally means a Rust toolchain, `cargo install`, and knowing what a backend, workspace, and agent *are*. This project removes all of that: **one command** downloads a prebuilt binary (no Rust), then a Thai-language **TUI wizard** walks a first-timer through every setup choice with a plain-language explanation beside each option.
+Installing [BWOC](https://github.com/bemindlabs/BWOC-Framework) normally means a Rust toolchain, `cargo install`, and knowing what a backend, workspace, and agent *are*. This project removes all of that: **one command** downloads a prebuilt binary (no Rust), then a bilingual **TUI wizard** (English by default, Thai with one keypress) walks a first-timer through every setup choice with a plain-language explanation beside each option.
 
 ## 📦 Install
 
@@ -32,7 +32,7 @@ The bootstrap detects your OS + architecture, downloads the latest `bwoc` + `bwo
 
 ## 🧙 The wizard
 
-`bwoc-setup` is a three-pane terminal wizard — **options** on the left, a **Thai explanation** of the focused choice on the right, **key hints** at the bottom. It shells out to the `bwoc` CLI under the hood, so it stays correct against whatever `bwoc` version is installed. It steps through:
+`bwoc-setup` is a three-pane terminal wizard — **options** on the left, a **plain-language explanation** of the focused choice on the right, **key hints** at the bottom. It shells out to the `bwoc` CLI under the hood, so it stays correct against whatever `bwoc` version is installed. It steps through:
 
 - **Backend** — Claude · Antigravity · Codex · Kimi · Copilot · Ollama · OpenAI-compatible, each explained, with a ✓/✗ probe for whether its CLI is already installed.
 - **Workspace** — folder path, single-agent vs fleet, runtime vs inspection-only, and CLI language.
@@ -40,7 +40,7 @@ The bootstrap detects your OS + architecture, downloads the latest `bwoc` + `bwo
 - **Advanced (opt-in)** — what teams, skills, and plugins are, for later.
 - **Verify** — runs `bwoc doctor`, `bwoc check`, and `bwoc list`, then prints the exact next commands.
 
-Every line on screen is Thai, written for someone who has never touched a terminal.
+The wizard opens in **English** and switches to **Thai** (or back) at any time with **F2** — pick once on the first screen, or flip mid-flow. Written for someone who has never touched a terminal. Preset the language with `bwoc-setup --lang th` if you prefer.
 
 ## 🗂️ Layout
 

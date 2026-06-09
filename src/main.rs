@@ -9,12 +9,14 @@
 /// any state change.  All `bwoc` CLI invocations happen via `exec::bwoc` (no
 /// interactive children, output always captured).
 ///
-/// Hidden flag: `bwoc-setup --version` prints the package version and exits
-/// without entering the TUI (used by CI smoke tests).
+/// Flags:
+///   --version / -V   Print the package version and exit (no TUI).
+///   --lang en|th     Start the wizard in the specified language (default: en).
 
 mod app;
 mod catalog;
 mod exec;
+mod i18n;
 mod ui;
 
 use std::io;
@@ -29,18 +31,23 @@ use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 
 use app::{App, InputKind, Stage};
+use i18n::Lang;
 
 // ---------------------------------------------------------------------------
 // Entry point
 // ---------------------------------------------------------------------------
 
 fn main() {
-    // Hidden --version flag: print version and exit cleanly (no TUI).
     let args: Vec<String> = std::env::args().collect();
+
+    // --version / -V: print version and exit cleanly (no TUI).
     if args.iter().any(|a| a == "--version" || a == "-V") {
         println!("bwoc-setup {}", env!("CARGO_PKG_VERSION"));
         return;
     }
+
+    // --lang en|th: optional language preset (default En).
+    let initial_lang = parse_lang_flag(&args).unwrap_or(Lang::En);
 
     // Install panic hook: restore terminal before the default handler prints
     // the panic message so the user's shell is left in a usable state.
@@ -50,15 +57,33 @@ fn main() {
         default_hook(info);
     }));
 
-    let exit_code = run();
+    let exit_code = run(initial_lang);
     std::process::exit(exit_code);
+}
+
+/// Parse `--lang <value>` from the argument list. Returns `None` on missing or
+/// unrecognised value so the caller can fall back to the default.
+fn parse_lang_flag(args: &[String]) -> Option<Lang> {
+    let mut iter = args.iter();
+    while let Some(a) = iter.next() {
+        if a == "--lang" {
+            if let Some(val) = iter.next() {
+                return Lang::from_str(val);
+            }
+        }
+        // Also accept --lang=<value>.
+        if let Some(val) = a.strip_prefix("--lang=") {
+            return Lang::from_str(val);
+        }
+    }
+    None
 }
 
 // ---------------------------------------------------------------------------
 // Run: setup → event loop → teardown
 // ---------------------------------------------------------------------------
 
-fn run() -> i32 {
+fn run(initial_lang: Lang) -> i32 {
     use std::io::IsTerminal;
     if !io::stdout().is_terminal() {
         eprintln!(
@@ -88,7 +113,7 @@ fn run() -> i32 {
         }
     };
 
-    let mut app = App::new();
+    let mut app = App::new(initial_lang);
     let result = event_loop(&mut term, &mut app);
 
     if let Err(e) = restore_terminal() {
@@ -162,8 +187,14 @@ fn handle_key(app: &mut App, key: KeyEvent) -> bool {
         return true;
     }
 
+    // F2: toggle language at any stage (always handled first).
+    if code == KeyCode::F(2) {
+        app.toggle_lang();
+        return false;
+    }
+
     match &app.stage {
-        // BwocMissing has its own [ลองใหม่] / [ออก] menu.
+        // BwocMissing has its own [Retry] / [Quit] menu.
         s if matches!(
             app.input,
             InputKind::BwocMissing { .. }
@@ -229,8 +260,8 @@ fn handle_bwoc_missing(app: &mut App, code: KeyCode) -> bool {
         KeyCode::Enter => {
             if let InputKind::BwocMissing { cursor } = &app.input {
                 match cursor {
-                    0 => app.retry(), // ลองใหม่
-                    _ => return true, // ออก
+                    0 => app.retry(),  // Retry
+                    _ => return true,  // Quit
                 }
             }
         }

@@ -2,6 +2,9 @@
 ///
 /// 3-pane layout: left = interactive, right = explanation, bottom = key hints.
 /// Title bar shows step N/Total + stage name.
+///
+/// All user-visible strings consult `app.lang` for bilingual output.
+/// F2 toggles the language live at any stage.
 
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
@@ -10,6 +13,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap};
 
 use crate::app::{App, InputKind, Stage};
+use crate::i18n::{Lang, t};
 
 // Colour palette (terminal-theme-friendly named colours).
 const C_ACCENT: Color = Color::Cyan;
@@ -43,8 +47,9 @@ pub fn draw(f: &mut Frame, app: &App) {
 fn draw_title(f: &mut Frame, area: Rect, app: &App) {
     let step = app.current_step();
     let total = app.total_stages();
-    let name = app.stage.display_name();
-    let text = format!(" BWOC Setup  ขั้นตอน {step}/{total}: {name} ");
+    let name = app.stage.display_name(app.lang);
+    let step_label = t(app.lang, "Step", "ขั้นตอน");
+    let text = format!(" BWOC Setup  {step_label} {step}/{total}: {name} ");
     let p = Paragraph::new(Line::from(Span::styled(
         text,
         Style::default()
@@ -70,7 +75,8 @@ fn draw_body(f: &mut Frame, area: Rect, app: &App) {
 }
 
 fn draw_left(f: &mut Frame, area: Rect, app: &App) {
-    let title = format!(" {} ", app.stage.display_name());
+    let lang = app.lang;
+    let title = format!(" {} ", app.stage.display_name(lang));
     let block = Block::default()
         .borders(Borders::ALL)
         .title(title)
@@ -120,12 +126,14 @@ fn draw_left(f: &mut Frame, area: Rect, app: &App) {
             let display = if app.in_custom_model {
                 // Custom model text input overlays the normal text input.
                 format!(
-                    "พิมพ์ชื่อ model:\n> {}█\n\n(Enter เพื่อยืนยัน, Esc เพื่อกลับ)",
-                    app.custom_model_buffer
+                    "{}:\n> {}█\n\n({})",
+                    t(lang, "Type model name", "พิมพ์ชื่อ model"),
+                    app.custom_model_buffer,
+                    t(lang, "Enter to confirm, Esc to cancel", "Enter เพื่อยืนยัน, Esc เพื่อกลับ"),
                 )
             } else {
                 let shown = if buffer.is_empty() {
-                    format!("▏ (default: {placeholder})")
+                    format!("▏ ({}: {placeholder})", t(lang, "default", "ค่าเริ่มต้น"))
                 } else {
                     format!("> {buffer}█")
                 };
@@ -145,12 +153,12 @@ fn draw_left(f: &mut Frame, area: Rect, app: &App) {
         InputKind::Action { ok, output } => {
             let status_line = if *ok {
                 Line::from(Span::styled(
-                    "✓ สำเร็จ",
+                    t(lang, "✓ Success", "✓ สำเร็จ"),
                     Style::default().fg(C_SUCCESS).add_modifier(Modifier::BOLD),
                 ))
             } else {
                 Line::from(Span::styled(
-                    "✗ เกิดข้อผิดพลาด",
+                    t(lang, "✗ Error", "✗ เกิดข้อผิดพลาด"),
                     Style::default().fg(C_ERROR).add_modifier(Modifier::BOLD),
                 ))
             };
@@ -165,21 +173,27 @@ fn draw_left(f: &mut Frame, area: Rect, app: &App) {
         }
 
         InputKind::BwocMissing { cursor } => {
-            let opts = ["[ลองใหม่]", "[ออก]"];
+            let retry_label = t(lang, "[Retry]", "[ลองใหม่]");
+            let quit_label  = t(lang, "[Quit]",  "[ออก]");
+            let opts = [retry_label, quit_label];
             let mut lines: Vec<Line> = vec![
                 Line::from(Span::styled(
-                    "✗ ไม่พบคำสั่ง bwoc",
+                    t(lang, "✗ bwoc command not found", "✗ ไม่พบคำสั่ง bwoc"),
                     Style::default().fg(C_ERROR).add_modifier(Modifier::BOLD),
                 )),
                 Line::from(""),
-                Line::from(
+                Line::from(t(lang,
+                    "bwoc is not installed or not on PATH.",
                     "bwoc ยังไม่ได้ติดตั้ง หรือยังไม่ได้เพิ่มใน PATH",
-                ),
+                )),
                 Line::from(""),
-                Line::from("วิธีแก้ไข:"),
-                Line::from("  1. รัน scripts/install.sh ก่อน"),
-                Line::from("  2. ตรวจสอบว่า PATH มี ~/.local/bin"),
-                Line::from("  3. เปิด terminal ใหม่แล้วลองอีกครั้ง"),
+                Line::from(t(lang, "How to fix:", "วิธีแก้ไข:")),
+                Line::from(t(lang, "  1. Run scripts/install.sh first",
+                               "  1. รัน scripts/install.sh ก่อน")),
+                Line::from(t(lang, "  2. Verify ~/.local/bin is on PATH",
+                               "  2. ตรวจสอบว่า PATH มี ~/.local/bin")),
+                Line::from(t(lang, "  3. Open a new terminal and retry",
+                               "  3. เปิด terminal ใหม่แล้วลองอีกครั้ง")),
                 Line::from(""),
             ];
             for (i, opt) in opts.iter().enumerate() {
@@ -226,7 +240,7 @@ fn draw_hints(f: &mut Frame, area: Rect, app: &App) {
     let p = Paragraph::new(Line::from(
         hints
             .into_iter()
-            .map(|(key, desc)| {
+            .flat_map(|(key, desc)| {
                 vec![
                     Span::styled(
                         format!(" {key}"),
@@ -241,37 +255,37 @@ fn draw_hints(f: &mut Frame, area: Rect, app: &App) {
                     ),
                 ]
             })
-            .flatten()
             .collect::<Vec<_>>(),
     ));
     f.render_widget(p, area);
 }
 
 fn build_hints(app: &App) -> Vec<(&'static str, &'static str)> {
+    let lang = app.lang;
     let mut hints: Vec<(&'static str, &'static str)> = Vec::new();
 
     match &app.input {
         InputKind::Select { .. } => {
-            hints.push(("↑↓", "เลื่อน"));
-            hints.push(("Enter", "เลือก/ถัดไป"));
+            hints.push(("↑↓", t(lang, "move", "เลื่อน")));
+            hints.push(("Enter", t(lang, "select/next", "เลือก/ถัดไป")));
         }
         InputKind::Text { .. } => {
-            hints.push(("พิมพ์", "แก้ไข"));
-            hints.push(("Enter", "ยืนยัน"));
-            hints.push(("Backspace", "ลบ"));
+            hints.push(("type", t(lang, "edit", "แก้ไข")));
+            hints.push(("Enter", t(lang, "confirm", "ยืนยัน")));
+            hints.push(("Backspace", t(lang, "delete", "ลบ")));
         }
         InputKind::Info => {
-            hints.push(("Enter", "ถัดไป"));
+            hints.push(("Enter", t(lang, "next", "ถัดไป")));
         }
         InputKind::Action { ok, .. } => {
-            hints.push(("Enter", "ถัดไป"));
+            hints.push(("Enter", t(lang, "next", "ถัดไป")));
             if !ok {
-                hints.push(("r", "ลองใหม่"));
+                hints.push(("r", t(lang, "retry", "ลองใหม่")));
             }
         }
         InputKind::BwocMissing { .. } => {
-            hints.push(("↑↓", "เลื่อน"));
-            hints.push(("Enter", "เลือก"));
+            hints.push(("↑↓", t(lang, "move", "เลื่อน")));
+            hints.push(("Enter", t(lang, "select", "เลือก")));
         }
     }
 
@@ -280,10 +294,13 @@ fn build_hints(app: &App) -> Vec<(&'static str, &'static str)> {
         && !matches!(app.stage, Stage::Done)
         && !matches!(app.input, InputKind::BwocMissing { .. });
     if can_back {
-        hints.push(("← / Esc", "ย้อนกลับ"));
+        hints.push(("← / Esc", t(lang, "back", "ย้อนกลับ")));
     }
 
-    hints.push(("Ctrl-C", "ออก"));
+    // F2 language toggle — shown at every stage (bilingual label).
+    hints.push(("F2", "language / ภาษา"));
+
+    hints.push(("Ctrl-C", t(lang, "quit", "ออก")));
     hints
 }
 
@@ -292,28 +309,41 @@ fn build_hints(app: &App) -> Vec<(&'static str, &'static str)> {
 // ---------------------------------------------------------------------------
 
 fn right_pane_title(app: &App) -> String {
+    let lang = app.lang;
     match &app.stage {
+        Stage::LangSelect    => " Language / ภาษา ".to_string(),
         Stage::PickBackend => {
             let b = &crate::catalog::BACKENDS[app.cfg.backend_idx];
             format!(" {} ", b.label)
         }
-        Stage::BaseUrl => " ℹ BaseUrl ".to_string(),
-        Stage::WorkspacePath => " ℹ Workspace ".to_string(),
-        Stage::WorkspaceMode => " ℹ โหมด ".to_string(),
-        Stage::WorkspaceRuntime => " ℹ Runtime ".to_string(),
-        Stage::WorkspaceLang => " ℹ ภาษา ".to_string(),
-        Stage::AgentName => " ℹ ชื่อ Agent ".to_string(),
-        Stage::AgentRole => " ℹ หน้าที่ ".to_string(),
-        Stage::AgentModel => " ℹ Model ".to_string(),
+        Stage::BaseUrl       => format!(" ℹ {} ", t(lang, "BaseUrl", "BaseUrl")),
+        Stage::WorkspacePath => format!(" ℹ {} ", t(lang, "Workspace", "Workspace")),
+        Stage::WorkspaceMode => format!(" ℹ {} ", t(lang, "Mode", "โหมด")),
+        Stage::WorkspaceRuntime => format!(" ℹ Runtime "),
+        Stage::WorkspaceLang => format!(" ℹ {} ", t(lang, "CLI Language", "ภาษา CLI")),
+        Stage::AgentName     => format!(" ℹ {} ", t(lang, "Agent Name", "ชื่อ Agent")),
+        Stage::AgentRole     => format!(" ℹ {} ", t(lang, "Role", "หน้าที่")),
+        Stage::AgentModel    => " ℹ Model ".to_string(),
         Stage::AgentFallback => " ℹ Fallback ".to_string(),
-        _ => " ℹ ข้อมูล ".to_string(),
+        _                    => format!(" ℹ {} ", t(lang, "Info", "ข้อมูล")),
     }
 }
 
 /// Build the left-pane body text for info stages.
 fn info_body(app: &App) -> String {
+    let lang = app.lang;
     match &app.stage {
-        Stage::Welcome => "\
+        Stage::Welcome => match lang {
+            Lang::En => "\
+Welcome to BWOC Setup!\n\n\
+BWOC (Buddhist Way of Coding)\n\
+is a framework for building AI agents\n\
+that work with a variety of backends.\n\n\
+This wizard walks you through setup\n\
+from start to finish — won't take long.\n\n\
+Press Enter to begin ⟶"
+                .to_string(),
+            Lang::Th => "\
 ยินดีต้อนรับสู่ BWOC Setup!\n\n\
 BWOC (Buddhist Way of Coding)\n\
 คือ framework สำหรับสร้าง AI agent\n\
@@ -321,9 +351,25 @@ BWOC (Buddhist Way of Coding)\n\
 Wizard นี้จะพาคุณตั้งค่าทุกอย่าง\n\
 ตั้งแต่ต้นจนจบ ใช้เวลาไม่นาน\n\n\
 กด Enter เพื่อเริ่มต้น ⟶"
-            .to_string(),
+                .to_string(),
+        },
 
-        Stage::AdvancedInfo => "\
+        Stage::AdvancedInfo => match lang {
+            Lang::En => "\
+BWOC extra features:\n\n\
+TEAMS (bwoc team)\n\
+  Create agent groups that share tasks\n\
+  and collaborate together.\n\n\
+SKILLS (bwoc skill)\n\
+  Add special capabilities to an agent,\n\
+  e.g. web search, read PDF files.\n\n\
+PLUGINS (bwoc plugin)\n\
+  Connect to Jira, Figma, Slack,\n\
+  and other external systems.\n\n\
+Everything can be added later — no rush.\n\n\
+Press Enter to continue ⟶"
+                .to_string(),
+            Lang::Th => "\
 Feature เสริมของ BWOC:\n\n\
 TEAMS (bwoc team)\n\
   สร้างกลุ่ม agent ที่แชร์ task\n\
@@ -336,31 +382,48 @@ PLUGINS (bwoc plugin)\n\
   และระบบภายนอกอื่น ๆ\n\n\
 ทุกอย่างเพิ่มได้ทีหลัง ไม่ต้องทำตอนนี้\n\n\
 กด Enter เพื่อไปขั้นตอนต่อไป ⟶"
-            .to_string(),
+                .to_string(),
+        },
 
         Stage::Done => {
-            format!(
-                "ตั้งค่าเสร็จสมบูรณ์!\n\n\
-สิ่งที่สร้างแล้ว:\n\
-  Workspace: {}\n\
-  Agent: {}\n\
-  Backend: {}\n\
-  Model: {}\n\n\
-คำสั่งเริ่มต้น:\n\
-  cd {}\n\
+            let (ws, agent, backend, model) = (
+                &app.cfg.workspace_path,
+                &app.cfg.agent_name,
+                app.cfg.backend().label,
+                &app.cfg.primary_model,
+            );
+            match lang {
+                Lang::En => format!(
+                    "Setup complete!\n\n\
+What was created:\n\
+  Workspace: {ws}\n\
+  Agent: {agent}\n\
+  Backend: {backend}\n\
+  Model: {model}\n\n\
+Getting started:\n\
+  cd {ws}\n\
   bwoc list\n\
   bwoc spawn --path \\\n\
-    agents/agent-{}\n\
-  bwoc chat {}\n\n\
-กด Enter หรือ q เพื่อออก",
-                app.cfg.workspace_path,
-                app.cfg.agent_name,
-                app.cfg.backend().label,
-                app.cfg.primary_model,
-                app.cfg.workspace_path,
-                app.cfg.agent_name,
-                app.cfg.agent_name,
-            )
+    agents/agent-{agent}\n\
+  bwoc chat {agent}\n\n\
+Press Enter or q to exit"
+                ),
+                Lang::Th => format!(
+                    "ตั้งค่าเสร็จสมบูรณ์!\n\n\
+สิ่งที่สร้างแล้ว:\n\
+  Workspace: {ws}\n\
+  Agent: {agent}\n\
+  Backend: {backend}\n\
+  Model: {model}\n\n\
+คำสั่งเริ่มต้น:\n\
+  cd {ws}\n\
+  bwoc list\n\
+  bwoc spawn --path \\\n\
+    agents/agent-{agent}\n\
+  bwoc chat {agent}\n\n\
+กด Enter หรือ q เพื่อออก"
+                ),
+            }
         }
 
         _ => String::new(),
