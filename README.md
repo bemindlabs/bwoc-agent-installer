@@ -6,9 +6,9 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-2024-orange.svg)](https://www.rust-lang.org/)
-[![Version](https://img.shields.io/badge/version-0.1.5-blue.svg)](Cargo.toml)
+[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](Cargo.toml)
 [![UI](https://img.shields.io/badge/UI-EN%20%7C%20TH-blue.svg)](#-the-wizard)
-[![Status](https://img.shields.io/badge/status-0.1.5%20pre--release-yellow.svg)](#-status)
+[![Status](https://img.shields.io/badge/status-1.0.0%20stable-brightgreen.svg)](#-status)
 [![CI](https://github.com/bemindlabs/bwoc-agent-installer/actions/workflows/ci.yml/badge.svg)](https://github.com/bemindlabs/bwoc-agent-installer/actions/workflows/ci.yml)
 
 </div>
@@ -71,7 +71,7 @@ cargo build --release        # → target/release/bwoc-setup
 
 ## 📊 Status
 
-**0.1.4 — pre-release.** Wizard, bootstrap scripts, and CI are complete; the public one-liner is verified end-to-end (downloads `bwoc` from BWOC-Framework releases + `bwoc-setup` from this repo's own releases, checksum-verified, then launches the wizard). The wizard is bilingual (EN default · F2 toggles Thai), re-installs in place over an existing `bwoc`, and its palette mirrors the `bwoc_core::design` token system (Cyan accent · Blue/White selection · Gray muted — see `src/theme.rs`). Note: the TUI needs a real standalone terminal (it cannot run inside an embedded/IDE console).
+**v1.0.0 — stable.** End-to-end verified: the public one-liner downloads `bwoc` from BWOC-Framework releases + `bwoc-setup` from this repo's own releases (checksum-verified), installs (re-installing in place over an existing `bwoc`), and launches the wizard. The wizard guides backend → workspace → first agent → verify, passing the verification-gate commands `bwoc new` needs and writing `baseUrl` into the manifest for OpenAI-compatible backends. Bilingual (English default · **F2** toggles Thai), three-pane TUI whose palette mirrors the `bwoc_core::design` token system (Cyan accent · Blue/White selection · Gray muted — see `src/theme.rs`). CI runs fmt + clippy (`-D warnings`) + build/test on Linux/macOS/Windows. Note: the TUI needs a real standalone terminal (it cannot run inside an embedded/IDE console).
 
 ## 📄 License
 
