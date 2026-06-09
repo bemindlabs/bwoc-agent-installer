@@ -14,7 +14,24 @@
 set -euo pipefail
 
 REPO="bemindlabs/BWOC-Framework"
-BIN_DIR="${BWOC_BIN_DIR:-$HOME/.local/bin}"
+
+# Detect an existing bwoc so a re-run upgrades it IN PLACE rather than dropping
+# a second, possibly PATH-shadowed copy in a different directory. Resolution:
+#   explicit BWOC_BIN_DIR  >  dir of an existing bwoc on PATH  >  ~/.local/bin
+EXISTING_BWOC="$(command -v bwoc 2>/dev/null || true)"
+EXISTING_VER=""
+if [ -n "$EXISTING_BWOC" ]; then
+  EXISTING_VER="$(bwoc --version 2>/dev/null | head -1 || true)"
+  EXISTING_DIR="$(cd -- "$(dirname -- "$EXISTING_BWOC")" && pwd)"
+fi
+
+if [ -n "${BWOC_BIN_DIR:-}" ]; then
+  BIN_DIR="$BWOC_BIN_DIR"
+elif [ -n "$EXISTING_BWOC" ]; then
+  BIN_DIR="$EXISTING_DIR"
+else
+  BIN_DIR="$HOME/.local/bin"
+fi
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -55,6 +72,17 @@ case "$OS" in
 esac
 
 info "ระบบ: $OS / $ARCH → target triple: $TARGET"
+
+if [ -n "$EXISTING_BWOC" ]; then
+  info "พบ bwoc เดิม: ${EXISTING_VER:-unknown} ($EXISTING_BWOC)"
+  if [ "$EXISTING_DIR" != "$BIN_DIR" ]; then
+    warn "จะติดตั้งลง $BIN_DIR (ต่างจากของเดิม) — อาจมี bwoc ซ้อนกัน"
+  else
+    info "จะติดตั้งทับที่เดิม (re-install / upgrade in place)"
+  fi
+else
+  info "ติดตั้งใหม่ → $BIN_DIR"
+fi
 
 # ---------------------------------------------------------------------------
 # Fetch latest release tag from GitHub API
@@ -212,5 +240,12 @@ warn "  cargo build --release"
 warn "  ./target/release/bwoc-setup"
 warn "--------------------------------------------------------------"
 
-ok "ติดตั้ง BWOC เสร็จสมบูรณ์!"
+NEW_VER="$("${BIN_DIR}/bwoc" --version 2>/dev/null | head -1 || true)"
+if [ -n "$EXISTING_BWOC" ] && [ -n "$EXISTING_VER" ] && [ "$EXISTING_VER" != "$NEW_VER" ]; then
+  ok "อัปเดต BWOC แล้ว: ${EXISTING_VER} → ${NEW_VER:-?}"
+elif [ -n "$EXISTING_BWOC" ]; then
+  ok "ติดตั้ง BWOC ซ้ำเสร็จ (re-install): ${NEW_VER:-?}"
+else
+  ok "ติดตั้ง BWOC เสร็จสมบูรณ์: ${NEW_VER:-?}"
+fi
 info "ลองรัน: bwoc --version"

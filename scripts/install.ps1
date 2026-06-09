@@ -17,8 +17,21 @@ $ErrorActionPreference = 'Stop'
 # ---------------------------------------------------------------------------
 
 $REPO     = 'bemindlabs/BWOC-Framework'
-$BIN_DIR  = if ($env:BWOC_BIN_DIR) { $env:BWOC_BIN_DIR } `
-            else { Join-Path $env:LOCALAPPDATA 'Programs\bwoc' }
+
+# Detect an existing bwoc so a re-run upgrades it IN PLACE instead of dropping a
+# second, PATH-shadowed copy. Resolution: BWOC_BIN_DIR > dir of existing bwoc >
+# %LOCALAPPDATA%\Programs\bwoc.
+$existingCmd = Get-Command bwoc -ErrorAction SilentlyContinue
+$EXISTING_VER = ''
+$EXISTING_DIR = ''
+if ($existingCmd) {
+    $EXISTING_DIR = Split-Path -Parent $existingCmd.Source
+    $EXISTING_VER = (& $existingCmd.Source --version 2>$null | Select-Object -First 1)
+}
+
+$BIN_DIR = if ($env:BWOC_BIN_DIR) { $env:BWOC_BIN_DIR } `
+           elseif ($existingCmd)  { $EXISTING_DIR } `
+           else { Join-Path $env:LOCALAPPDATA 'Programs\bwoc' }
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -41,6 +54,17 @@ $TARGET = switch ($arch) {
 }
 
 Info "ระบบ: Windows / $arch → target triple: $TARGET"
+
+if ($existingCmd) {
+    Info "พบ bwoc เดิม: $EXISTING_VER ($($existingCmd.Source))"
+    if ($EXISTING_DIR -ne $BIN_DIR) {
+        Warn "จะติดตั้งลง $BIN_DIR (ต่างจากของเดิม) — อาจมี bwoc ซ้อนกัน"
+    } else {
+        Info "จะติดตั้งทับที่เดิม (re-install / upgrade in place)"
+    }
+} else {
+    Info "ติดตั้งใหม่ → $BIN_DIR"
+}
 
 # ---------------------------------------------------------------------------
 # Fetch latest release tag
@@ -182,5 +206,12 @@ if ($installed -and (Test-Path $setupExe)) {
     Warn '--------------------------------------------------------------'
 }
 
-Ok 'ติดตั้ง BWOC เสร็จสมบูรณ์!'
+$NEW_VER = (& (Join-Path $BIN_DIR 'bwoc.exe') --version 2>$null | Select-Object -First 1)
+if ($existingCmd -and $EXISTING_VER -and ($EXISTING_VER -ne $NEW_VER)) {
+    Ok "อัปเดต BWOC แล้ว: $EXISTING_VER → $NEW_VER"
+} elseif ($existingCmd) {
+    Ok "ติดตั้ง BWOC ซ้ำเสร็จ (re-install): $NEW_VER"
+} else {
+    Ok "ติดตั้ง BWOC เสร็จสมบูรณ์: $NEW_VER"
+}
 Info 'ลองรัน: bwoc --version'
