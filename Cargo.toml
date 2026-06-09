@@ -1,0 +1,15 @@
+[package]
+name = "bwoc-agent-installer"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT"
+description = "Friendly guided installer + first-run setup wizard for the BWOC framework"
+
+[[bin]]
+name = "bwoc-setup"
+path = "src/main.rs"
+
+[dependencies]
+ratatui = "0.30"
+crossterm = "0.29"
