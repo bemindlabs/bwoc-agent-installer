@@ -113,6 +113,23 @@ fn run(initial_lang: Lang) -> i32 {
         }
     };
 
+    // Pre-flight: confirm crossterm can actually initialize the keyboard reader.
+    // Some environments report a TTY (so the is_terminal() guards above pass)
+    // yet can't deliver interactive key events — e.g. an IDE/embedded console or
+    // a command runner like Claude Code's `!`. crossterm surfaces this as a raw
+    // "Failed to initialize input reader". Catch it here and exit with guidance
+    // instead, after restoring the terminal.
+    if let Err(e) = event::poll(Duration::from_millis(0)) {
+        let _ = restore_terminal();
+        eprintln!(
+            "bwoc-setup: cannot read keyboard input ({e}).\n\
+             ไม่สามารถอ่านคีย์บอร์ดได้ — มักเกิดเมื่อไม่ได้รันในเทอร์มินัลจริง \
+             (เช่นใน IDE, embedded console, หรือ command runner ของ Claude Code).\n\
+             Open a standalone terminal (Terminal.app / iTerm) and run `bwoc-setup`."
+        );
+        return 2;
+    }
+
     let mut app = App::new(initial_lang);
     let result = event_loop(&mut term, &mut app);
 
