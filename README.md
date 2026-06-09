@@ -6,9 +6,9 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-2024-orange.svg)](https://www.rust-lang.org/)
-[![Version](https://img.shields.io/badge/version-0.1.4-blue.svg)](Cargo.toml)
+[![Version](https://img.shields.io/badge/version-0.1.5-blue.svg)](Cargo.toml)
 [![UI](https://img.shields.io/badge/UI-EN%20%7C%20TH-blue.svg)](#-the-wizard)
-[![Status](https://img.shields.io/badge/status-0.1.4%20pre--release-yellow.svg)](#-status)
+[![Status](https://img.shields.io/badge/status-0.1.5%20pre--release-yellow.svg)](#-status)
 [![CI](https://github.com/bemindlabs/bwoc-agent-installer/actions/workflows/ci.yml/badge.svg)](https://github.com/bemindlabs/bwoc-agent-installer/actions/workflows/ci.yml)
 
 </div>

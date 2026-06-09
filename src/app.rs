@@ -821,28 +821,51 @@ impl App {
             args.push(self.cfg.fallback_model.clone());
         }
 
-        if backend.id == "openai-compatible" && !self.cfg.base_url.is_empty() {
-            // `bwoc new` exposes the OpenAI-compatible baseUrl via `--endpoint`
-            // (recorded as `baseUrl` in config.manifest.json) — there is no
-            // `--base-url` flag.
-            args.push("--endpoint".to_string());
-            args.push(self.cfg.base_url.clone());
+        // `bwoc new` requires the four verification-gate commands. The wizard
+        // runs bwoc in a captured (non-TTY) subprocess, so bwoc cannot prompt
+        // for them — without these flags `bwoc new` fails with "missing
+        // required field(s) … cannot prompt". Pass no-op `true` defaults the
+        // user can refine in config.manifest.json later. (openai-compatible has
+        // NO baseUrl/endpoint flag on `bwoc new`; baseUrl is written into the
+        // manifest after creation — see below.)
+        for flag in ["--lint-cmd", "--format-cmd", "--test-cmd", "--build-cmd"] {
+            args.push(flag.to_string());
+            args.push("true".to_string());
         }
 
         let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
         let res = exec::bwoc(&arg_refs);
 
+        // openai-compatible needs `baseUrl` in the manifest (no CLI flag for it).
+        let base_url_note =
+            if res.ok && backend.id == "openai-compatible" && !self.cfg.base_url.is_empty() {
+                match self.write_base_url_to_manifest(&self.cfg.base_url) {
+                    Ok(()) => String::new(),
+                    Err(e) => format!(
+                        "\n\n{} {e}",
+                        t(
+                            lang,
+                            "⚠ Could not write baseUrl to the manifest:",
+                            "⚠ เขียน baseUrl ลง manifest ไม่สำเร็จ:"
+                        ),
+                    ),
+                }
+            } else {
+                String::new()
+            };
+
         if res.ok {
             (
                 true,
                 format!(
-                    "{} '{}' {}\n\nBackend: {}\nModel: {}\n\n{}",
+                    "{} '{}' {}\n\nBackend: {}\nModel: {}\n\n{}{}",
                     t(lang, "✓ Agent", "✓ สร้าง agent"),
                     self.cfg.agent_name,
                     t(lang, "created successfully!", "สำเร็จ!"),
                     backend.label,
                     self.cfg.primary_model,
                     res.combined(),
+                    base_url_note,
                 ),
             )
         } else {
@@ -859,6 +882,29 @@ impl App {
                 ),
             )
         }
+    }
+
+    /// Write `baseUrl` into the freshly-created agent's `config.manifest.json`.
+    /// `bwoc new` has no flag for it, but the openai-compatible backend reads
+    /// `baseUrl` from the manifest at spawn time. The manifest is a flat JSON
+    /// object; we insert `baseUrl` as the first field (no JSON dependency).
+    fn write_base_url_to_manifest(&self, base_url: &str) -> Result<(), String> {
+        let path = format!(
+            "{}/agents/agent-{}/config.manifest.json",
+            self.cfg.workspace_path, self.cfg.agent_name
+        );
+        let content = std::fs::read_to_string(&path).map_err(|e| format!("read {path}: {e}"))?;
+        if content.contains("\"baseUrl\"") {
+            return Ok(()); // already present — nothing to do
+        }
+        let brace = content
+            .find('{')
+            .ok_or_else(|| "manifest is not a JSON object".to_string())?;
+        let esc = base_url.replace('\\', "\\\\").replace('"', "\\\"");
+        let (head, tail) = content.split_at(brace + 1);
+        let updated = format!("{head}\n  \"baseUrl\": \"{esc}\",{tail}");
+        std::fs::write(&path, updated).map_err(|e| format!("write {path}: {e}"))?;
+        Ok(())
     }
 
     fn run_verify(&self) -> (bool, String) {
@@ -1172,7 +1218,14 @@ Workspace: {ws}\nAgent: {agent}\nBackend: {backend}\nModel: {model}\n\n\
 // Helpers
 // ---------------------------------------------------------------------------
 
+/// Default workspace path = the directory the user launched `bwoc-setup` from.
+/// People run the installer inside the folder they want the workspace in, so
+/// the current directory is the least-surprising default. Falls back to
+/// `~/bwoc-workspace` only if the cwd can't be determined.
 fn default_workspace() -> String {
+    if let Ok(cwd) = std::env::current_dir() {
+        return cwd.to_string_lossy().into_owned();
+    }
     let home = std::env::var("HOME")
         .or_else(|_| std::env::var("USERPROFILE"))
         .unwrap_or_else(|_| ".".to_string());
