@@ -184,7 +184,16 @@ if [ -n "$SETUP_TAG" ]; then
         ok "ติดตั้ง bwoc-setup → ${BIN_DIR}/bwoc-setup"
         rm -rf "$SETUP_TMP"
         info "กำลังเปิด BWOC Setup Wizard..."
-        exec "${BIN_DIR}/bwoc-setup"
+        # Reattach stdin to the controlling terminal: under `curl … | bash`
+        # the wizard inherits the curl pipe as stdin (EOF), so without this it
+        # can't read the keyboard ("Failed to initialize input reader"). When a
+        # real terminal is present we hand it /dev/tty; otherwise exec plainly
+        # and let the wizard print its own TTY-required message.
+        if [ -t 1 ] && [ -r /dev/tty ]; then
+          exec "${BIN_DIR}/bwoc-setup" </dev/tty
+        else
+          exec "${BIN_DIR}/bwoc-setup"
+        fi
       fi
     done
   fi

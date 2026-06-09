@@ -67,6 +67,18 @@ fn run() -> i32 {
         );
         return 2;
     }
+    // stdin must be a TTY too, or the key-event reader can't read the keyboard.
+    // This commonly happens under `curl … | bash`, where the wizard inherits
+    // the curl pipe as stdin. The installer reattaches /dev/tty for us; if you
+    // hit this, re-run the install command or launch `bwoc-setup` directly.
+    if !io::stdin().is_terminal() {
+        eprintln!(
+            "bwoc-setup: stdin is not a TTY — keyboard input is unavailable.\n\
+             If you launched via `curl … | bash`, just run `bwoc-setup` directly \
+             in your terminal."
+        );
+        return 2;
+    }
 
     let mut term = match setup_terminal() {
         Ok(t) => t,

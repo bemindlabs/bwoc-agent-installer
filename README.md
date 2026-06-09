@@ -6,7 +6,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-2024-orange.svg)](https://www.rust-lang.org/)
-[![Version](https://img.shields.io/badge/version-0.1.0-blue.svg)](Cargo.toml)
+[![Version](https://img.shields.io/badge/version-0.1.1-blue.svg)](Cargo.toml)
 [![UI](https://img.shields.io/badge/UI-Thai-blue.svg)](#-the-wizard)
 [![Status](https://img.shields.io/badge/status-0.1.0%20pre--release-yellow.svg)](#-status)
 
