@@ -75,10 +75,11 @@ if (-not (Test-Path $BIN_DIR)) {
 function Download-AndExtract {
     param(
         [string]$Name,
-        [string]$DestDir
+        [string]$DestDir,
+        [string]$Base = $BASE_URL
     )
 
-    $url  = "$BASE_URL/$Name.zip"
+    $url  = "$Base/$Name.zip"
     $tmp  = Join-Path ([System.IO.Path]::GetTempPath()) ([System.Guid]::NewGuid())
     New-Item -ItemType Directory -Path $tmp | Out-Null
 
@@ -142,11 +143,23 @@ if ($userPath -notlike "*$BIN_DIR*") {
 # Try to install bwoc-setup (may not be published yet)
 # ---------------------------------------------------------------------------
 
-$setupName = "bwoc-setup-$TAG-$TARGET"
-$setupTmp  = Join-Path $BIN_DIR '_tmp_setup'
+# bwoc-setup ships from THIS installer repo's own releases (decoupled from
+# bwoc, which comes from BWOC-Framework).
+$SETUP_REPO = 'bemindlabs/bwoc-agent-installer'
+$setupTmp   = Join-Path $BIN_DIR '_tmp_setup'
 New-Item -ItemType Directory -Path $setupTmp -Force | Out-Null
 
-$installed = Download-AndExtract -Name $setupName -DestDir $setupTmp
+$setupTag = $null
+try {
+    $setupTag = (Invoke-RestMethod "https://api.github.com/repos/$SETUP_REPO/releases/latest").tag_name
+} catch { $setupTag = $null }
+
+$installed = $false
+if ($setupTag) {
+    $setupBase = "https://github.com/$SETUP_REPO/releases/download/$setupTag"
+    $setupName = "bwoc-setup-$setupTag-$TARGET"
+    $installed = Download-AndExtract -Name $setupName -DestDir $setupTmp -Base $setupBase
+}
 $setupExe  = Join-Path $setupTmp 'bwoc-setup.exe'
 
 if ($installed -and (Test-Path $setupExe)) {
@@ -158,7 +171,7 @@ if ($installed -and (Test-Path $setupExe)) {
 } else {
     Remove-Item $setupTmp -Recurse -Force -ErrorAction SilentlyContinue
     Warn '--------------------------------------------------------------'
-    Warn "bwoc-setup ยังไม่ได้อยู่ใน release asset สำหรับ $TAG"
+    Warn "bwoc-setup ยังไม่มีใน release ของ $SETUP_REPO"
     Warn 'เมื่อ asset พร้อมแล้ว script นี้จะเปิด wizard ให้อัตโนมัติ'
     Warn ''
     Warn 'ตอนนี้ build เองได้:'

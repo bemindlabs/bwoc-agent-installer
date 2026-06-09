@@ -79,8 +79,9 @@ BASE_URL="https://github.com/${REPO}/releases/download/${TAG}"
 download_and_verify() {
   local NAME="$1"      # e.g. bwoc-v2026.6.7-1-aarch64-apple-darwin
   local DEST_DIR="$2"  # extraction target directory
+  local BASE="${3:-$BASE_URL}"  # release base URL (defaults to bwoc's)
 
-  local URL="${BASE_URL}/${NAME}.tar.gz"
+  local URL="${BASE}/${NAME}.tar.gz"
   local TMP
   TMP="$(mktemp -d)"
   trap 'rm -rf "$TMP"' RETURN
@@ -159,29 +160,40 @@ case ":${PATH}:" in
 esac
 
 # ---------------------------------------------------------------------------
-# Try to install bwoc-setup (may not be published yet)
+# Try to install bwoc-setup — published from THIS installer repo's own
+# releases (decoupled from bwoc, which ships from BWOC-Framework). May not be
+# published yet on a brand-new repo.
 # ---------------------------------------------------------------------------
 
-SETUP_NAME="bwoc-setup-${TAG}-${TARGET}"
+SETUP_REPO="bemindlabs/bwoc-agent-installer"
 SETUP_TMP="$(mktemp -d)"
+SETUP_TAG=""
+if SETUP_JSON="$(curl -fsSL "https://api.github.com/repos/${SETUP_REPO}/releases/latest" 2>/dev/null)"; then
+  SETUP_TAG="$(printf '%s' "$SETUP_JSON" | grep '"tag_name"' | head -1 \
+    | sed 's/.*"tag_name": *"\([^"]*\)".*/\1/')"
+fi
 
-if download_and_verify "$SETUP_NAME" "$SETUP_TMP" 2>/dev/null; then
-  for F in "${SETUP_TMP}"/bwoc-setup "${SETUP_TMP}"/*/*/bwoc-setup; do
-    if [ -f "$F" ]; then
-      chmod +x "$F"
-      cp "$F" "${BIN_DIR}/bwoc-setup"
-      ok "ติดตั้ง bwoc-setup → ${BIN_DIR}/bwoc-setup"
-      rm -rf "$SETUP_TMP"
-      info "กำลังเปิด BWOC Setup Wizard..."
-      exec "${BIN_DIR}/bwoc-setup"
-    fi
-  done
+if [ -n "$SETUP_TAG" ]; then
+  SETUP_BASE="https://github.com/${SETUP_REPO}/releases/download/${SETUP_TAG}"
+  SETUP_NAME="bwoc-setup-${SETUP_TAG}-${TARGET}"
+  if download_and_verify "$SETUP_NAME" "$SETUP_TMP" "$SETUP_BASE" 2>/dev/null; then
+    for F in "${SETUP_TMP}"/bwoc-setup "${SETUP_TMP}"/*/bwoc-setup; do
+      if [ -f "$F" ]; then
+        chmod +x "$F"
+        cp "$F" "${BIN_DIR}/bwoc-setup"
+        ok "ติดตั้ง bwoc-setup → ${BIN_DIR}/bwoc-setup"
+        rm -rf "$SETUP_TMP"
+        info "กำลังเปิด BWOC Setup Wizard..."
+        exec "${BIN_DIR}/bwoc-setup"
+      fi
+    done
+  fi
 fi
 rm -rf "$SETUP_TMP"
 
 # bwoc-setup ยังไม่ได้อยู่ใน release asset — แนะนำวิธี build เอง
 warn "--------------------------------------------------------------"
-warn "bwoc-setup ยังไม่ได้อยู่ใน release asset สำหรับ ${TAG}"
+warn "bwoc-setup ยังไม่มีใน release ของ ${SETUP_REPO}"
 warn "เมื่อ asset พร้อมแล้ว script นี้จะเปิด wizard ให้อัตโนมัติ"
 warn ""
 warn "ตอนนี้ build เองได้:"
