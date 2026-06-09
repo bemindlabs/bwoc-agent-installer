@@ -12,11 +12,11 @@
 /// Flags:
 ///   --version / -V   Print the package version and exit (no TUI).
 ///   --lang en|th     Start the wizard in the specified language (default: en).
-
 mod app;
 mod catalog;
 mod exec;
 mod i18n;
+mod theme;
 mod ui;
 
 use std::io;
@@ -168,10 +168,7 @@ fn restore_terminal() -> io::Result<()> {
 // Event loop: poll → handle → redraw
 // ---------------------------------------------------------------------------
 
-fn event_loop(
-    term: &mut Terminal<CrosstermBackend<io::Stdout>>,
-    app: &mut App,
-) -> io::Result<()> {
+fn event_loop(term: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App) -> io::Result<()> {
     loop {
         term.draw(|f| ui::draw(f, app))?;
 
@@ -212,11 +209,7 @@ fn handle_key(app: &mut App, key: KeyEvent) -> bool {
 
     match &app.stage {
         // BwocMissing has its own [Retry] / [Quit] menu.
-        s if matches!(
-            app.input,
-            InputKind::BwocMissing { .. }
-        ) && s == &Stage::CheckBwoc =>
-        {
+        s if matches!(app.input, InputKind::BwocMissing { .. }) && s == &Stage::CheckBwoc => {
             return handle_bwoc_missing(app, code);
         }
 
@@ -277,8 +270,8 @@ fn handle_bwoc_missing(app: &mut App, code: KeyCode) -> bool {
         KeyCode::Enter => {
             if let InputKind::BwocMissing { cursor } = &app.input {
                 match cursor {
-                    0 => app.retry(),  // Retry
-                    _ => return true,  // Quit
+                    0 => app.retry(), // Retry
+                    _ => return true, // Quit
                 }
             }
         }

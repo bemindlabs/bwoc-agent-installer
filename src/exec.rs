@@ -3,7 +3,6 @@
 /// All bwoc invocations go through `bwoc()`.  The wizard never spawns an
 /// interactive child that grabs the TTY — full flags are always passed so bwoc
 /// runs non-interactively and output is captured.
-
 use std::process::Command;
 
 #[derive(Debug, Clone)]

@@ -6,9 +6,10 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-2024-orange.svg)](https://www.rust-lang.org/)
-[![Version](https://img.shields.io/badge/version-0.1.3-blue.svg)](Cargo.toml)
+[![Version](https://img.shields.io/badge/version-0.1.4-blue.svg)](Cargo.toml)
 [![UI](https://img.shields.io/badge/UI-EN%20%7C%20TH-blue.svg)](#-the-wizard)
-[![Status](https://img.shields.io/badge/status-0.1.3%20pre--release-yellow.svg)](#-status)
+[![Status](https://img.shields.io/badge/status-0.1.4%20pre--release-yellow.svg)](#-status)
+[![CI](https://github.com/bemindlabs/bwoc-agent-installer/actions/workflows/ci.yml/badge.svg)](https://github.com/bemindlabs/bwoc-agent-installer/actions/workflows/ci.yml)
 
 </div>
 
@@ -70,7 +71,7 @@ cargo build --release        # → target/release/bwoc-setup
 
 ## 📊 Status
 
-**0.1.0 — pre-release.** The wizard and both bootstrap scripts are complete and build clean. One thing remains before the one-liner is fully turnkey: `bwoc-setup` is not yet published as a release asset, so the scripts currently fall back to a "build from source" message after installing `bwoc`. Once the `bwoc-setup-<tag>-<target>` assets land in BWOC-Framework releases, the bootstrap launches the wizard automatically — no script change needed.
+**0.1.4 — pre-release.** Wizard, bootstrap scripts, and CI are complete; the public one-liner is verified end-to-end (downloads `bwoc` from BWOC-Framework releases + `bwoc-setup` from this repo's own releases, checksum-verified, then launches the wizard). The wizard is bilingual (EN default · F2 toggles Thai), re-installs in place over an existing `bwoc`, and its palette mirrors the `bwoc_core::design` token system (Cyan accent · Blue/White selection · Gray muted — see `src/theme.rs`). Note: the TUI needs a real standalone terminal (it cannot run inside an embedded/IDE console).
 
 ## 📄 License
 
